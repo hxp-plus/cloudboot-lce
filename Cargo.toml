@@ -1,0 +1,10 @@
+[package]
+name = "cloudboot-lce"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4"
+rusqlite = "0.27"
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
