@@ -1,6 +1,10 @@
-# CloudBoot Neo
+# CloudBoot Lite (Clientless Edition)
 
-下一代 CloudBoot 装机平台
+CloudBoot 精简无客户端版，一个及其简单的PXE装机软件。
+
+## 声明
+
+本项目由受云霁科技CloudBoot启发而来，与云霁科技ClouudBoot产品除名字里都带“CloudBoot”字样外无任何关联。项目开发过程中未参考CloudBoot代码，仅参考了互联网上公开的iPXE资料实现了物理机安装功能，云霁科技CloudBoot所拥有的其它功能均未实现。类似于Linux与Unix名字里都有nix，Linux受Unix启发且实现了Unix的功能，但Linux的开发未参考Unix代码。如本项目名称涉及侵权，请提issue联系本人修改。
 
 ## 部署指南
 
@@ -220,6 +224,20 @@ I need a rust web server using sqlite to act like a pxe install server. help me 
 ```bash
 yum install sqlite-devel sshpass
 ```
+
+## 修改 motd
+
+新建文件 `/etc/motd.d/cloudboot-lce` :
+
+```text
+   ____ _                 _ ____              _     _     ____ _____ 
+  / ___| | ___  _   _  __| | __ )  ___   ___ | |_  | |   / ___| ____|
+ | |   | |/ _ \| | | |/ _` |  _ \ / _ \ / _ \| __| | |  | |   |  _|  
+ | |___| | (_) | |_| | (_| | |_) | (_) | (_) | |_  | |__| |___| |___ 
+  \____|_|\___/ \__,_|\__,_|____/ \___/ \___/ \__| |_____\____|_____|
+
+```
+（该 ASCII Art 由 <https://patorjk.com/software/taag/#p=display&f=Standard&t=CloudBoot%20LCE> 生成）
 
 ## 使用指南
 
