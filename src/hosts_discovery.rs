@@ -54,7 +54,6 @@ fn process_lease_block(lease_block: &str) -> Option<String> {
     if let (Some(ip), Some(ends)) = (ip_address, ends_timestamp) {
         let current_time = Utc::now().naive_utc();
         if ends > current_time {
-            println!("[DEBUG] found valid lease block: \n{}", lease_block);
             return Some(ip);
         }
     }
@@ -138,7 +137,10 @@ pub async fn monitor_dhcp_leases(
             match install_progress {
                 Some(progress) => match progress.parse::<i32>() {
                     Ok(progress) => {
-                        println!("[DEBUG] Install progress for IP {}: {}", ip, progress);
+                        println!(
+                            "[INFO] Install progress for IP {} ({}): {}",
+                            ip, serial, progress
+                        );
                         let host = Host {
                             ip_address: ip.clone(),
                             serial,
@@ -149,13 +151,13 @@ pub async fn monitor_dhcp_leases(
                     }
                     _ => {
                         println!(
-                            "[DEBUG] Invalid install progress for IP {}: {}",
+                            "[INFO] Invalid install progress for IP {}: {}",
                             ip, progress
                         );
                     }
                 },
                 None => {
-                    println!("[DEBUG] No install progress found for IP: {}", ip);
+                    println!("[INFO] No install progress found for IP: {}", ip);
                 }
             }
         }

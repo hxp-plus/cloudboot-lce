@@ -1,10 +1,10 @@
 # CloudBoot Lite (Clientless Edition)
 
-CloudBoot 精简无客户端版，一个及其简单的PXE装机软件。
+CloudBoot 精简无客户端版，一个及其简单的 PXE 装机软件。
 
 ## 声明
 
-本项目由受云霁科技CloudBoot启发而来，与云霁科技ClouudBoot产品除名字里都带“CloudBoot”字样外无任何关联。项目开发过程中未参考CloudBoot代码，仅参考了互联网上公开的iPXE资料实现了物理机安装功能，云霁科技CloudBoot所拥有的其它功能均未实现。类似于Linux与Unix名字里都有nix，Linux受Unix启发且实现了Unix的功能，但Linux的开发未参考Unix代码。如本项目名称涉及侵权，请提issue联系本人修改。
+本项目由受云霁科技 CloudBoot 启发而来，与云霁科技 ClouudBoot 产品除名字里都带“CloudBoot”字样外无任何关联。项目开发过程中未参考 CloudBoot 代码，仅参考了互联网上公开的 iPXE 资料实现了物理机安装功能，云霁科技 CloudBoot 所拥有的其它功能均未实现。类似于 Linux 与 Unix 名字里都有 nix，Linux 受 Unix 启发且实现了 Unix 的功能，但 Linux 的开发未参考 Unix 代码。如本项目名称涉及侵权，请提 issue 联系本人修改。
 
 ## 部署指南
 
@@ -199,12 +199,12 @@ done
 
 其中 `sshpw` 后面的密码需要用 `openssl passwd -6` 生成密码的 hash 后填入。
 
-新建 nginx 配置 `/etc/nginx/default.d/cloudboot-neo.conf` ：
+新建 nginx 配置 `/etc/nginx/default.d/cloudboot-lce.conf` ：
 
 ```conf
 location /api {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_pass http://localhost:8000/;
+    proxy_pass http://localhost:8000;
 }
 ```
 
@@ -230,14 +230,33 @@ yum install sqlite-devel sshpass
 新建文件 `/etc/motd.d/cloudboot-lce` :
 
 ```text
-   ____ _                 _ ____              _     _     ____ _____ 
+   ____ _                 _ ____              _     _     ____ _____
   / ___| | ___  _   _  __| | __ )  ___   ___ | |_  | |   / ___| ____|
- | |   | |/ _ \| | | |/ _` |  _ \ / _ \ / _ \| __| | |  | |   |  _|  
- | |___| | (_) | |_| | (_| | |_) | (_) | (_) | |_  | |__| |___| |___ 
+ | |   | |/ _ \| | | |/ _` |  _ \ / _ \ / _ \| __| | |  | |   |  _|
+ | |___| | (_) | |_| | (_| | |_) | (_) | (_) | |_  | |__| |___| |___
   \____|_|\___/ \__,_|\__,_|____/ \___/ \___/ \__| |_____\____|_____|
 
 ```
+
 （该 ASCII Art 由 <https://patorjk.com/software/taag/#p=display&f=Standard&t=CloudBoot%20LCE> 生成）
+
+## 导入 iPXE 文件
+
+以麒麟 V10SP4 为例，新建 iPXE 文件 `Kylin-V10SP4-X86.ipxe` ：
+
+```ipxe
+#!ipxe
+echo "Booting ${serial}"
+kernel http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/vmlinuz initrd=initrd.img ksdevice=bootif BOOTIF=01-${netX/mac:hexhyp} inst.sshd inst.repo=http://osinstall.pxe/repo/kylin/v10sp4/ inst.text inst.ks=http://osinstall.pxe/repo/kylin/v10sp4/ks-pxe.cfg
+initrd http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/initrd.img
+boot
+```
+
+然后将其注册到数据库：
+
+```bash
+sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db "insert into ipxe (os,script) values ('Kylin-V10SP4-X86','/root/cloudboot-lce/assets/Kylin-V10SP4-X86.ipxe');"
+```
 
 ## 使用指南
 
@@ -248,4 +267,10 @@ yum install sqlite-devel sshpass
 ```shell
 sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db 'SELECT * FROM hosts
 ;'
+```
+
+找到所有操作系统和对应的 iPXE 文件：
+
+```shell
+sqlite3 -cmd '.headers on' -cmd '.mode tab' cloudboot-lce.db 'SELECT * FROM ipxe;'
 ```

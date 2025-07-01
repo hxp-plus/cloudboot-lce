@@ -1,0 +1,5 @@
+#!ipxe
+echo "Booting ${serial}"
+kernel http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/vmlinuz initrd=initrd.img ksdevice=bootif BOOTIF=01-${netX/mac:hexhyp} inst.sshd inst.repo=http://osinstall.pxe/repo/kylin/v10sp4/ inst.text inst.ks=http://osinstall.pxe/repo/kylin/v10sp4/ks-pxe.cfg
+initrd http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/initrd.img
+boot

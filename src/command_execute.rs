@@ -38,7 +38,10 @@ pub fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<String> {
             Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
         }
         _ => {
-            println!("Run SSH command {} on {} failed!", command, ip_addr);
+            println!(
+                "[INFO] Run SSH command \"{}\" on host {} failed!",
+                command, ip_addr
+            );
             None
         }
     }

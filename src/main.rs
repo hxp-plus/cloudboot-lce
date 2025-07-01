@@ -15,6 +15,7 @@
 */
 
 pub mod command_execute;
+pub mod database_init;
 pub mod hosts_discovery;
 
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
@@ -24,47 +25,19 @@ use std::sync::{Arc, Mutex};
 use tokio::task;
 use tokio::time::{self, Duration}; // Add this line
 
+use crate::database_init::init_db;
 use crate::hosts_discovery::monitor_dhcp_leases;
+use std::fs; // Add this line
 
-// Shared database connection
+// 数据库地址
+const DB_PATH: &str = "./cloudboot-lce.db";
+
+// 数据库连接池互斥锁
 type DbPool = Arc<Mutex<Connection>>;
-
-// Initialize database schema
-fn init_db(conn: &Connection) {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS hosts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            serial TEXT UNIQUE,
-            ip_address TEXT,
-            os TEXT,
-            install_progress TEXT,
-            last_updated TEXT
-        )",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS ipxe (
-            os TEXT PRIMARY KEY,
-            script TEXT
-        )",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            serial TEXT,
-            os TEXT,
-            processed INTEGER DEFAULT 0
-        )",
-        [],
-    )
-    .unwrap();
-}
 
 // Handler for `/api/ipxe/{serial}`
 async fn get_ipxe_script(serial: web::Path<String>, db_pool: web::Data<DbPool>) -> impl Responder {
+    println!("[INFO] Offering iPXE script for {serial}");
     let conn = db_pool.lock().unwrap();
     let serial = serial.into_inner();
     let os: Option<String> = conn
@@ -75,15 +48,21 @@ async fn get_ipxe_script(serial: web::Path<String>, db_pool: web::Data<DbPool>) 
         )
         .ok();
     if let Some(os) = os {
-        let script: Option<String> = conn
+        let script_path: Option<String> = conn
             .query_row(
                 "SELECT script FROM ipxe WHERE os = ?1",
                 params![os],
                 |row| row.get(0),
             )
             .ok();
-        if let Some(script) = script {
-            return HttpResponse::Ok().body(script);
+        if let Some(path) = script_path {
+            match fs::read_to_string(&path) {
+                Ok(script) => return HttpResponse::Ok().body(script),
+                Err(_) => {
+                    return HttpResponse::InternalServerError()
+                        .body(format!("Error reading script file {}", path));
+                }
+            }
         }
     }
     HttpResponse::NotFound().body("iPXE script not found")
@@ -123,23 +102,22 @@ async fn process_jobs(db_pool: DbPool) {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // Define the database file path in the current directory
-    let db_path = Path::new("./cloudboot-lce.db");
-    // Open or create the SQLite database
+    // 初始化数据库
+    let db_path = Path::new(DB_PATH);
     let conn = Connection::open(db_path).unwrap();
-    // Initialize the database schema if it doesn't exist
     init_db(&conn);
+    // 监控 dhcp.leases
     let db_pool = Arc::new(Mutex::new(conn));
-    // Spawn background task
-    let db_pool_clone = db_pool.clone();
-    task::spawn(async move {
-        process_jobs(db_pool_clone).await;
-    });
     let db_pool_clone = db_pool.clone();
     tokio::spawn(async move {
         monitor_dhcp_leases("/var/lib/dhcpd/dhcpd.leases", 10, db_pool_clone).await;
     });
-    // Start web server
+    // 处理装机任务
+    let db_pool_clone = db_pool.clone();
+    task::spawn(async move {
+        process_jobs(db_pool_clone).await;
+    });
+    // 受理 HTTP 请求
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(db_pool.clone()))
