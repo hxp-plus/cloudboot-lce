@@ -1,5 +1,21 @@
-mod modules;
-use modules::hosts_discovery::monitor_dhcp_leases;
+/*
+ * Copyright 2025 Xiping Hu <hxp@hxp.plus>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+*/
+
+pub mod command_execute;
+pub mod hosts_discovery;
 
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use rusqlite::{Connection, params};
@@ -7,6 +23,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::task;
 use tokio::time::{self, Duration}; // Add this line
+
+use crate::hosts_discovery::monitor_dhcp_leases;
 
 // Shared database connection
 type DbPool = Arc<Mutex<Connection>>;
@@ -119,7 +137,7 @@ async fn main() -> std::io::Result<()> {
     });
     let db_pool_clone = db_pool.clone();
     tokio::spawn(async move {
-        monitor_dhcp_leases("/var/lib/dhcpd/dhcpd.leases", 10, db_pool_clone, "abc123").await;
+        monitor_dhcp_leases("/var/lib/dhcpd/dhcpd.leases", 10, db_pool_clone).await;
     });
     // Start web server
     HttpServer::new(move || {
