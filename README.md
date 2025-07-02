@@ -1,6 +1,6 @@
-# CloudBoot Neo
+# CloudBoot Lite (Clientless Edition)
 
-下一代 CloudBoot 装机平台
+CloudBoot 精简无客户端版
 
 ## 部署指南
 
@@ -220,6 +220,20 @@ I need a rust web server using sqlite to act like a pxe install server. help me 
 ```bash
 yum install sqlite-devel sshpass
 ```
+
+## 修改 motd
+
+新建文件 `/etc/motd.d/cloudboot-lce` :
+
+```text
+   ____ _                 _ ____              _     _     ____ _____ 
+  / ___| | ___  _   _  __| | __ )  ___   ___ | |_  | |   / ___| ____|
+ | |   | |/ _ \| | | |/ _` |  _ \ / _ \ / _ \| __| | |  | |   |  _|  
+ | |___| | (_) | |_| | (_| | |_) | (_) | (_) | |_  | |__| |___| |___ 
+  \____|_|\___/ \__,_|\__,_|____/ \___/ \___/ \__| |_____\____|_____|
+
+```
+（该 ASCII Art 由 <https://patorjk.com/software/taag/#p=display&f=Standard&t=CloudBoot%20LCE> 生成）
 
 ## 使用指南
 
