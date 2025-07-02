@@ -1,6 +1,10 @@
 # CloudBoot Lite (Clientless Edition)
 
-CloudBoot 精简无客户端版
+CloudBoot 精简无客户端版，一个及其简单的PXE装机软件。
+
+## 声明
+
+本项目由受云霁科技CloudBoot启发而来，与云霁科技ClouudBoot产品除名字里都带“CloudBoot”字样外无任何关联。项目开发过程中未参考CloudBoot代码，仅参考了互联网上公开的iPXE资料实现了物理机安装功能，云霁科技CloudBoot所拥有的其它功能均未实现。类似于Linux与Unix名字里都有nix，Linux受Unix启发且实现了Unix的功能，但Linux的开发未参考Unix代码。如本项目名称涉及侵权，请提issue联系本人修改。
 
 ## 部署指南
 
