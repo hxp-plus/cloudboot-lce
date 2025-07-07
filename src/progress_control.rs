@@ -15,11 +15,7 @@
 */
 
 // 主机装机进度控制代码：这段代码用于监控主机上 /tmp/install-progress.ack 文件并做相应的处理
-use chrono::{NaiveDateTime, Utc};
 use rusqlite::{Connection, params};
-use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use tokio::time::{self, Duration};
 
@@ -83,6 +79,35 @@ fn start_kickstart_installation(db_pool: Arc<Mutex<Connection>>) {
     }
 }
 
+// 将所有安装进度为 RebootingToKickstart 的主机重启到 kickstart
+fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
+    let conn = db_pool.lock().unwrap();
+    // 查询安装进度为NotConfigured且os不为空的主机
+    let mut stmt = conn
+        .prepare("SELECT ip_address, os, install_progress FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL")
+        .unwrap();
+    let host_iter = stmt
+        .query_map(params![progress::RebootingToKickstart as i32], |row| {
+            Ok(Host {
+                ip_address: row.get(0)?,
+                os: row.get(1)?,
+                install_progress: row.get(2)?,
+            })
+        })
+        .unwrap();
+    let hosts: Vec<Host> = host_iter.filter_map(Result::ok).collect();
+    // 检查每个主机的 /tmp/install-progress.ack 文件是否为 RebootingToKickstart
+    for host in hosts {
+        let progress_on_host =
+            run_ssh_command_on_host(&host.ip_address, &format!("cat /tmp/install-progress.ack"))
+                .unwrap_or("".to_string());
+        if progress_on_host.trim() == (progress::RebootingToKickstart as i32).to_string() {
+            run_ssh_command_on_host(&host.ip_address, "/sbin/reboot");
+            println!("[INFO] Rebooting host: {}", host.ip_address);
+        }
+    }
+}
+
 // 持续监控主机状态，并在达到进度时下发操作
 pub async fn progress_control(interval_secs: u64, db_pool: Arc<Mutex<Connection>>) {
     let mut interval = time::interval(Duration::from_secs(interval_secs));
@@ -91,5 +116,6 @@ pub async fn progress_control(interval_secs: u64, db_pool: Arc<Mutex<Connection>
         // 将所有满足装机条件的机器状态设置为RebootingToKickstart
         start_kickstart_installation(db_pool.clone());
         // 重启所有状态为RebootingToKickstart的机器
+        reboot_host_to_kickstart(db_pool.clone());
     }
 }
