@@ -190,6 +190,7 @@ sshpw --username=root $6$dCZFWv.CPy9rrzpb$dvUdNFfzrVjaG99eqYLdMulOB.LegqE4CiND9S
 
 %pre --interpreter=/bin/bash
 echo 0 >/tmp/install-progress
+sleep 30
 while :;do
   curl -m 3 -s http://osinstall.pxe/api/ping -o /dev/null || reboot
   sleep 10
@@ -265,8 +266,7 @@ sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db "insert into ipx
 找到所有已纳管主机：
 
 ```shell
-sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db 'SELECT * FROM hosts
-;'
+sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db 'SELECT * FROM hosts;'
 ```
 
 找到所有操作系统和对应的 iPXE 文件：

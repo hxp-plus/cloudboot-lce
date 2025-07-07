@@ -28,7 +28,7 @@ struct Host {
     install_progress: i32,
 }
 
-enum progress {
+pub enum progress {
     NotConfigured = 0,
     RebootingToKickstart = 5,
     KickstartLoaded = 10,
