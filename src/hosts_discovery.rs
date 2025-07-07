@@ -148,6 +148,10 @@ pub async fn monitor_dhcp_leases(
                             last_updated: current_time,
                         };
                         add_host_to_db(host, &db_pool);
+                        run_ssh_command_on_host(
+                            &ip,
+                            &format!("echo \"{}\">/tmp/install-progress.ack", progress),
+                        );
                     }
                     _ => {
                         println!(

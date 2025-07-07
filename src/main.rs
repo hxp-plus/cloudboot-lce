@@ -17,17 +17,19 @@
 pub mod command_execute;
 pub mod database_init;
 pub mod hosts_discovery;
+pub mod progress_control;
 
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use rusqlite::{Connection, params};
+use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::task;
-use tokio::time::{self, Duration}; // Add this line
+use tokio::time::{self, Duration};
 
 use crate::database_init::init_db;
 use crate::hosts_discovery::monitor_dhcp_leases;
-use std::fs; // Add this line
+use crate::progress_control::progress_control;
 
 // 数据库地址
 const DB_PATH: &str = "./cloudboot-lce.db";
@@ -65,7 +67,8 @@ async fn get_ipxe_script(serial: web::Path<String>, db_pool: web::Data<DbPool>) 
             }
         }
     }
-    HttpResponse::NotFound().body("iPXE script not found")
+    println!("[INFO] No iPXE script found for serial {serial}");
+    HttpResponse::NotFound().body("")
 }
 
 // Background task to process jobs
@@ -113,9 +116,14 @@ async fn main() -> std::io::Result<()> {
         monitor_dhcp_leases("/var/lib/dhcpd/dhcpd.leases", 10, db_pool_clone).await;
     });
     // 处理装机任务
+    // let db_pool_clone = db_pool.clone();
+    // task::spawn(async move {
+    //     process_jobs(db_pool_clone).await;
+    // });
+    // 进行装机进度控制
     let db_pool_clone = db_pool.clone();
     task::spawn(async move {
-        process_jobs(db_pool_clone).await;
+        progress_control(10, db_pool_clone).await;
     });
     // 受理 HTTP 请求
     HttpServer::new(move || {

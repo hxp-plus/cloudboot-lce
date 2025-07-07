@@ -24,7 +24,7 @@ pub fn init_db(conn: &Connection) {
             serial TEXT UNIQUE,
             ip_address TEXT,
             os TEXT,
-            install_progress TEXT,
+            install_progress INTEGER,
             last_updated TEXT
         )",
         [],
@@ -34,16 +34,6 @@ pub fn init_db(conn: &Connection) {
         "CREATE TABLE IF NOT EXISTS ipxe (
             os TEXT PRIMARY KEY,
             script TEXT
-        )",
-        [],
-    )
-    .unwrap();
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS jobs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            serial TEXT,
-            os TEXT,
-            status TEXT
         )",
         [],
     )
