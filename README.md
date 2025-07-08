@@ -274,3 +274,12 @@ sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db 'SELECT * FROM h
 ```shell
 sqlite3 -cmd '.headers on' -cmd '.mode tab' cloudboot-lce.db 'SELECT * FROM ipxe;'
 ```
+
+### 调试指南
+
+本项目使用 rust-1.88.0 ，对应 rustup 版本 1.28.2 ，下载地址：
+
+- <https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init>
+- <https://static.rust-lang.org/dist/2025-06-26/rust-src-1.88.0.tar.xz>
+- <https://static.rust-lang.org/dist/2025-06-26/rust-std-1.88.0-x86_64-unknown-linux-musl.tar.xz>
+- <https://static.rust-lang.org/dist/2025-06-26/rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz>
