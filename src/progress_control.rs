@@ -28,7 +28,7 @@ struct Host {
     install_progress: i32,
 }
 
-pub enum progress {
+pub enum Progress {
     NotConfigured = 0,
     RebootingToKickstart = 5,
     KickstartLoaded = 10,
@@ -45,7 +45,7 @@ fn start_kickstart_installation(db_pool: Arc<Mutex<Connection>>) {
         .prepare("SELECT ip_address, os, install_progress FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL")
         .unwrap();
     let host_iter = stmt
-        .query_map(params![progress::NotConfigured as i32], |row| {
+        .query_map(params![Progress::NotConfigured as i32], |row| {
             Ok(Host {
                 ip_address: row.get(0)?,
                 os: row.get(1)?,
@@ -63,12 +63,12 @@ fn start_kickstart_installation(db_pool: Arc<Mutex<Connection>>) {
             .query_map(params![host.os], |row| row.get::<_, String>(0))
             .unwrap();
         // 如果ipxe不为空，且主机为未配置状态，将主机上的安装进度设置为 RebootingToKickstart
-        if script_iter.count() > 0 && host.install_progress == progress::NotConfigured as i32 {
+        if script_iter.count() > 0 && host.install_progress == Progress::NotConfigured as i32 {
             run_ssh_command_on_host(
                 &host.ip_address,
                 &format!(
                     "echo \"{}\" >/tmp/install-progress",
-                    progress::RebootingToKickstart as i32
+                    Progress::RebootingToKickstart as i32
                 ),
             );
             println!(
@@ -87,7 +87,7 @@ fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
         .prepare("SELECT ip_address, os, install_progress FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL")
         .unwrap();
     let host_iter = stmt
-        .query_map(params![progress::RebootingToKickstart as i32], |row| {
+        .query_map(params![Progress::RebootingToKickstart as i32], |row| {
             Ok(Host {
                 ip_address: row.get(0)?,
                 os: row.get(1)?,
@@ -101,7 +101,7 @@ fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
         let progress_on_host =
             run_ssh_command_on_host(&host.ip_address, &format!("cat /tmp/install-progress.ack"))
                 .unwrap_or("".to_string());
-        if progress_on_host.trim() == (progress::RebootingToKickstart as i32).to_string() {
+        if progress_on_host.trim() == (Progress::RebootingToKickstart as i32).to_string() {
             run_ssh_command_on_host(&host.ip_address, "/sbin/reboot");
             println!("[INFO] Rebooting host: {}", host.ip_address);
         }

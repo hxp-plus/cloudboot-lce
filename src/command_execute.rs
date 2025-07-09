@@ -27,6 +27,8 @@ pub fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<String> {
         .arg("-o")
         .arg("LogLevel=ERROR")
         .arg("-o")
+        .arg("StrictHostKeyChecking=no")
+        .arg("-o")
         .arg("UserKnownHostsFile=/dev/null")
         .arg("-o")
         .arg("ConnectTimeout=3")

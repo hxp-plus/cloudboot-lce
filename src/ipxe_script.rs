@@ -20,7 +20,7 @@ use rusqlite::{Connection, params};
 use std::fs;
 use std::sync::{Arc, Mutex};
 
-use crate::progress_control::progress;
+use crate::progress_control::Progress;
 
 // 数据库连接池互斥锁
 type DbPool = Arc<Mutex<Connection>>;
@@ -36,7 +36,7 @@ pub async fn get_ipxe_script(
     let os: Option<String> = conn
         .query_row(
             "SELECT os FROM hosts WHERE serial = ?1 and install_progress = ?2",
-            params![serial, progress::RebootingToKickstart as i32],
+            params![serial, Progress::RebootingToKickstart as i32],
             |row| row.get(0),
         )
         .ok();
