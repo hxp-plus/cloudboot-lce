@@ -20,7 +20,7 @@ use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
 use tokio::time::Duration;
 
-use crate::command_execute::run_ssh_command_on_host;
+use crate::command_execute::run_ssh_command_on_host_sync;
 
 #[derive(Debug)]
 struct Host {
@@ -65,7 +65,7 @@ fn start_kickstart_installation(db_pool: Arc<Mutex<Connection>>) {
             .unwrap();
         // 如果ipxe不为空，且主机为未配置状态，将主机上的安装进度设置为 RebootingToKickstart
         if script_iter.count() > 0 && host.install_progress == Progress::NotConfigured as i32 {
-            run_ssh_command_on_host(
+            run_ssh_command_on_host_sync(
                 &host.ip_address,
                 &format!(
                     "echo \"{}\" >/tmp/install-progress",
@@ -99,11 +99,13 @@ fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
     let hosts: Vec<Host> = host_iter.filter_map(Result::ok).collect();
     // 检查每个主机的 /tmp/install-progress.ack 文件是否为 RebootingToKickstart
     for host in hosts {
-        let progress_on_host =
-            run_ssh_command_on_host(&host.ip_address, &format!("cat /tmp/install-progress.ack"))
-                .unwrap_or("".to_string());
+        let progress_on_host = run_ssh_command_on_host_sync(
+            &host.ip_address,
+            &format!("cat /tmp/install-progress.ack"),
+        )
+        .unwrap_or("".to_string());
         if progress_on_host.trim() == (Progress::RebootingToKickstart as i32).to_string() {
-            run_ssh_command_on_host(&host.ip_address, "/sbin/reboot");
+            run_ssh_command_on_host_sync(&host.ip_address, "/sbin/reboot");
             println!("[INFO] Rebooting host: {}", host.ip_address);
         }
     }

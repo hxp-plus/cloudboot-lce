@@ -144,17 +144,17 @@ pub async fn monitor_dhcp_leases(
                     let serial = run_ssh_command_on_host(
                         &ip,
                         "cat /sys/devices/virtual/dmi/id/product_serial",
-                    )
+                    ).await
                     .unwrap_or("unknown".to_string());
                     // 收集带外管理IP地址信息
                     let ipmi_addr = run_ssh_command_on_host(
                         &ip,
                         "ipmitool lan print | grep \"^IP Address\" | grep -v \"Source\" | awk '{print $4}'",
-                    )
+                    ).await
                     .unwrap_or("unknown".to_string());
                     // 收集安装进度信息，如果能收集到合法信息则入库
                     let install_progress =
-                        run_ssh_command_on_host(&ip, "cat /tmp/install-progress");
+                        run_ssh_command_on_host(&ip, "cat /tmp/install-progress").await;
                     match install_progress {
                         Some(progress) => match progress.parse::<i32>() {
                             Ok(progress) => {
@@ -174,7 +174,7 @@ pub async fn monitor_dhcp_leases(
                                 run_ssh_command_on_host(
                                     &ip,
                                     &format!("echo \"{}\">/tmp/install-progress.ack", progress),
-                                );
+                                ).await;
                             }
                             _ => {
                                 println!(

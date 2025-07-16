@@ -14,13 +14,44 @@
  * limitations under the License.
 */
 
-use std::process::Command;
+use tokio::process::Command;
 
 const SSH_PASS: &str = "abc123";
 
 // SSH 到指定主机并运行命令，返回命令的运行结果
-pub fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<String> {
+pub async fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<String> {
     let output = Command::new("sshpass")
+        .arg("-p")
+        .arg(SSH_PASS)
+        .arg("ssh")
+        .arg("-o")
+        .arg("LogLevel=ERROR")
+        .arg("-o")
+        .arg("StrictHostKeyChecking=no")
+        .arg("-o")
+        .arg("UserKnownHostsFile=/dev/null")
+        .arg("-o")
+        .arg("ConnectTimeout=3")
+        .arg(ip_addr)
+        .arg(command)
+        .output()
+        .await;
+    match output {
+        Ok(output) if output.status.success() => {
+            Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        }
+        _ => {
+            println!(
+                "[INFO] Run SSH command \"{}\" on host {} failed!",
+                command, ip_addr
+            );
+            None
+        }
+    }
+}
+
+pub fn run_ssh_command_on_host_sync(ip_addr: &str, command: &str) -> Option<String> {
+    let output = std::process::Command::new("sshpass")
         .arg("-p")
         .arg(SSH_PASS)
         .arg("ssh")
