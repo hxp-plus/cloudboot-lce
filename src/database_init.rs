@@ -23,6 +23,7 @@ pub fn init_db(conn: &Connection) {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             serial TEXT UNIQUE,
             ip_address TEXT,
+            ipmi_address TEXT,
             os TEXT,
             install_progress INTEGER,
             last_updated TEXT

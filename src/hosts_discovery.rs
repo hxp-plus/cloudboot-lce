@@ -29,6 +29,7 @@ use crate::command_execute::run_ssh_command_on_host;
 #[derive(Debug)]
 struct Host {
     ip_address: String,
+    ipmi_address: String,
     serial: String,
     install_progress: i32,
     last_updated: String,
@@ -103,14 +104,14 @@ fn add_host_to_db(host: Host, db_pool: &Arc<Mutex<Connection>>) {
     // 如果序列号不存在则插入，否则更新
     if !exists {
         conn.execute(
-                    "INSERT INTO hosts (ip_address, serial, install_progress, last_updated) VALUES (?1, ?2, ?3, ?4)",
-                    params![host.ip_address, host.serial, host.install_progress, host.last_updated],
+                    "INSERT INTO hosts (ip_address, serial, install_progress, last_updated, ipmi_address) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![host.ip_address, host.serial, host.install_progress, host.last_updated, host.ipmi_address],
                 )
                 .unwrap();
     } else {
         conn.execute(
-                    "UPDATE hosts SET ip_address = ?1, install_progress = ?2, last_updated = ?3 WHERE serial = ?4",
-                    params![host.ip_address, host.install_progress, host.last_updated, host.serial],
+                    "UPDATE hosts SET ip_address = ?1, install_progress = ?2, last_updated = ?3 , ipmi_address = ?4 WHERE serial = ?5",
+                    params![host.ip_address, host.install_progress, host.last_updated, host.ipmi_address, host.serial],
                 )
                 .unwrap();
     }
@@ -134,15 +135,24 @@ pub async fn monitor_dhcp_leases(
             .for_each_concurrent(concurrency_limit, |ip| {
                 let db_pool = db_pool.clone();
                 async move {
+                    // 记录当前时间
                     let current_time = Local::now()
                         .naive_local()
                         .format("%Y-%m-%d %H:%M:%S")
                         .to_string();
+                    // 收集序列号信息
                     let serial = run_ssh_command_on_host(
                         &ip,
                         "cat /sys/devices/virtual/dmi/id/product_serial",
                     )
                     .unwrap_or("unknown".to_string());
+                    // 收集带外管理IP地址信息
+                    let ipmi_addr = run_ssh_command_on_host(
+                        &ip,
+                        "ipmitool lan print | grep \"^IP Address\" | grep -v \"Source\" | awk '{print $4}'",
+                    )
+                    .unwrap_or("unknown".to_string());
+                    // 收集安装进度信息，如果能收集到合法信息则入库
                     let install_progress =
                         run_ssh_command_on_host(&ip, "cat /tmp/install-progress");
                     match install_progress {
@@ -154,10 +164,12 @@ pub async fn monitor_dhcp_leases(
                                 );
                                 let host = Host {
                                     ip_address: ip.clone(),
+                                    ipmi_address: ipmi_addr,
                                     serial,
                                     install_progress: progress,
                                     last_updated: current_time,
                                 };
+                                // 入库并告诉客户端信息已收集
                                 add_host_to_db(host, &db_pool);
                                 run_ssh_command_on_host(
                                     &ip,
