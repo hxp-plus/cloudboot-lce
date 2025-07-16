@@ -49,33 +49,3 @@ pub async fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<Str
         }
     }
 }
-
-pub fn run_ssh_command_on_host_sync(ip_addr: &str, command: &str) -> Option<String> {
-    let output = std::process::Command::new("sshpass")
-        .arg("-p")
-        .arg(SSH_PASS)
-        .arg("ssh")
-        .arg("-o")
-        .arg("LogLevel=ERROR")
-        .arg("-o")
-        .arg("StrictHostKeyChecking=no")
-        .arg("-o")
-        .arg("UserKnownHostsFile=/dev/null")
-        .arg("-o")
-        .arg("ConnectTimeout=3")
-        .arg(ip_addr)
-        .arg(command)
-        .output();
-    match output {
-        Ok(output) if output.status.success() => {
-            Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-        }
-        _ => {
-            println!(
-                "[INFO] Run SSH command \"{}\" on host {} failed!",
-                command, ip_addr
-            );
-            None
-        }
-    }
-}
