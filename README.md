@@ -216,10 +216,6 @@ systemctl enable nginx
 systemctl restart nginx
 ```
 
-```
-I need a rust web server using sqlite to act like a pxe install server. help me to bootstrap the project. the server does 3 things: 1. when /api/ipxe/serial is requested, look for the operating system in hosts table and retuen ipxe script defined in ipxe table. 2. backgroud task periodically scans jobs table to find new os install task and update hosts table. 3. ipxe table stores ipxe file paths for each system.
-```
-
 ### 安装依赖
 
 ```bash
