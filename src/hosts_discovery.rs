@@ -16,12 +16,13 @@
 
 // 主机发现相关代码：这段代码用于监控 dhcp.leases 并对所有有 dhcp 租约的主机进行信息更新
 use chrono::{NaiveDateTime, Utc};
+use futures::stream::{self, StreamExt};
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
-use tokio::time::{self, Duration};
+use tokio::time::Duration;
 
 use crate::command_execute::run_ssh_command_on_host;
 
@@ -121,48 +122,63 @@ pub async fn monitor_dhcp_leases(
     interval_secs: u64,
     db_pool: Arc<Mutex<Connection>>,
 ) {
-    let mut interval = time::interval(Duration::from_secs(interval_secs));
     loop {
-        interval.tick().await;
+        // 记录开始时间
+        let start_time = Utc::now();
         // 获取当前还在 dhcp.leases 文件且租约没到期的 IP 地址
         let active_ips = parse_dhcp_leases(file_path);
+        // 并发上限
+        let concurrency_limit = 10;
         // 循环所有 IP 地址进行主机获取
-        for ip in &active_ips {
-            let current_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            let serial =
-                run_ssh_command_on_host(&ip, "cat /sys/devices/virtual/dmi/id/product_serial")
+        stream::iter(active_ips)
+            .for_each_concurrent(concurrency_limit, |ip| {
+                let db_pool = db_pool.clone(); // Clone Arc for each task
+                async move {
+                    let current_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                    let serial = run_ssh_command_on_host(
+                        &ip,
+                        "cat /sys/devices/virtual/dmi/id/product_serial",
+                    )
                     .unwrap_or("unknown".to_string());
-            let install_progress = run_ssh_command_on_host(&ip, "cat /tmp/install-progress");
-            match install_progress {
-                Some(progress) => match progress.parse::<i32>() {
-                    Ok(progress) => {
-                        println!(
-                            "[INFO] Install progress for IP {} ({}): {}",
-                            ip, serial, progress
-                        );
-                        let host = Host {
-                            ip_address: ip.clone(),
-                            serial,
-                            install_progress: progress,
-                            last_updated: current_time,
-                        };
-                        add_host_to_db(host, &db_pool);
-                        run_ssh_command_on_host(
-                            &ip,
-                            &format!("echo \"{}\">/tmp/install-progress.ack", progress),
-                        );
+                    let install_progress =
+                        run_ssh_command_on_host(&ip, "cat /tmp/install-progress");
+                    match install_progress {
+                        Some(progress) => match progress.parse::<i32>() {
+                            Ok(progress) => {
+                                println!(
+                                    "[INFO] Install progress for IP {} ({}): {}",
+                                    ip, serial, progress
+                                );
+                                let host = Host {
+                                    ip_address: ip.clone(),
+                                    serial,
+                                    install_progress: progress,
+                                    last_updated: current_time,
+                                };
+                                add_host_to_db(host, &db_pool);
+                                run_ssh_command_on_host(
+                                    &ip,
+                                    &format!("echo \"{}\">/tmp/install-progress.ack", progress),
+                                );
+                            }
+                            _ => {
+                                println!(
+                                    "[INFO] Invalid install progress for IP {}: {}",
+                                    ip, progress
+                                );
+                            }
+                        },
+                        None => {
+                            println!("[INFO] No install progress found for IP: {}", ip);
+                        }
                     }
-                    _ => {
-                        println!(
-                            "[INFO] Invalid install progress for IP {}: {}",
-                            ip, progress
-                        );
-                    }
-                },
-                None => {
-                    println!("[INFO] No install progress found for IP: {}", ip);
                 }
-            }
+            })
+            .await;
+        // 如果当前时间与上次检查时间间隔小于指定的间隔，则等待剩余时间
+        let elapsed_time = Utc::now().signed_duration_since(start_time).num_seconds();
+        if elapsed_time < interval_secs as i64 {
+            tokio::time::sleep(Duration::from_secs(interval_secs - elapsed_time as u64)).await;
         }
     }
 }

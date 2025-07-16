@@ -15,9 +15,10 @@
 */
 
 // 主机装机进度控制代码：这段代码用于监控主机上 /tmp/install-progress.ack 文件并做相应的处理
+use chrono::Utc;
 use rusqlite::{Connection, params};
 use std::sync::{Arc, Mutex};
-use tokio::time::{self, Duration};
+use tokio::time::Duration;
 
 use crate::command_execute::run_ssh_command_on_host;
 
@@ -110,12 +111,17 @@ fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
 
 // 持续监控主机状态，并在达到进度时下发操作
 pub async fn progress_control(interval_secs: u64, db_pool: Arc<Mutex<Connection>>) {
-    let mut interval = time::interval(Duration::from_secs(interval_secs));
     loop {
-        interval.tick().await;
+        // 记录开始时间
+        let start_time = Utc::now();
         // 将所有满足装机条件的机器状态设置为RebootingToKickstart
         start_kickstart_installation(db_pool.clone());
         // 重启所有状态为RebootingToKickstart的机器
         reboot_host_to_kickstart(db_pool.clone());
+        // 如果当前时间与上次检查时间间隔小于指定的间隔，则等待剩余时间
+        let elapsed_time = Utc::now().signed_duration_since(start_time).num_seconds();
+        if elapsed_time < interval_secs as i64 {
+            tokio::time::sleep(Duration::from_secs(interval_secs - elapsed_time as u64)).await;
+        }
     }
 }
