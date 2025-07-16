@@ -16,22 +16,20 @@
 
 // iPXE 脚本生成代码
 use actix_web::{HttpResponse, Responder, web};
-use rusqlite::{Connection, params};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::params;
 use std::fs;
-use std::sync::{Arc, Mutex};
 
 use crate::progress_control::Progress;
-
-// 数据库连接池互斥锁
-type DbPool = Arc<Mutex<Connection>>;
 
 // 处理 /api/ipxe/{serial}
 pub async fn get_ipxe_script(
     serial: web::Path<String>,
-    db_pool: web::Data<DbPool>,
+    db_pool: web::Data<Pool<SqliteConnectionManager>>,
 ) -> impl Responder {
     println!("[INFO] Offering iPXE script for {serial}");
-    let conn = db_pool.lock().unwrap();
+    let conn = db_pool.get().unwrap();
     let serial = serial.into_inner();
     let os: Option<String> = conn
         .query_row(
