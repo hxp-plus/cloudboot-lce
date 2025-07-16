@@ -15,7 +15,7 @@
 */
 
 // 主机发现相关代码：这段代码用于监控 dhcp.leases 并对所有有 dhcp 租约的主机进行信息更新
-use chrono::{NaiveDateTime, Utc};
+use chrono::{Local, NaiveDateTime, Utc};
 use futures::stream::{self, StreamExt};
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
@@ -134,7 +134,10 @@ pub async fn monitor_dhcp_leases(
             .for_each_concurrent(concurrency_limit, |ip| {
                 let db_pool = db_pool.clone();
                 async move {
-                    let current_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                    let current_time = Local::now()
+                        .naive_local()
+                        .format("%Y-%m-%d %H:%M:%S")
+                        .to_string();
                     let serial = run_ssh_command_on_host(
                         &ip,
                         "cat /sys/devices/virtual/dmi/id/product_serial",
