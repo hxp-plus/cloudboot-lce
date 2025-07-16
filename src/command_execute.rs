@@ -16,7 +16,7 @@
 
 use std::process::Command;
 
-const SSH_PASS: &str = "abc123"; // Define a constant for the SSH password
+const SSH_PASS: &str = "abc123";
 
 // SSH 到指定主机并运行命令，返回命令的运行结果
 pub fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<String> {
@@ -32,7 +32,7 @@ pub fn run_ssh_command_on_host(ip_addr: &str, command: &str) -> Option<String> {
         .arg("UserKnownHostsFile=/dev/null")
         .arg("-o")
         .arg("ConnectTimeout=3")
-        .arg(ip_addr) // Use the IP address variable
+        .arg(ip_addr)
         .arg(command)
         .output();
     match output {

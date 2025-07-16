@@ -132,7 +132,7 @@ pub async fn monitor_dhcp_leases(
         // 循环所有 IP 地址进行主机获取
         stream::iter(active_ips)
             .for_each_concurrent(concurrency_limit, |ip| {
-                let db_pool = db_pool.clone(); // Clone Arc for each task
+                let db_pool = db_pool.clone();
                 async move {
                     let current_time = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
                     let serial = run_ssh_command_on_host(
