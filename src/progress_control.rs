@@ -16,8 +16,9 @@
 
 // 主机装机进度控制代码：这段代码用于监控主机上 /tmp/install-progress.ack 文件并做相应的处理
 use chrono::Utc;
-use rusqlite::{Connection, params};
-use std::sync::{Arc, Mutex};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::params;
 use tokio::time::Duration;
 
 use crate::command_execute::run_ssh_command_on_host_sync;
@@ -39,8 +40,8 @@ pub enum Progress {
 }
 
 // 将所有尚未开始安装但是配置了操作系统的机器，安装进度置为正在重启到kickstart
-fn start_kickstart_installation(db_pool: Arc<Mutex<Connection>>) {
-    let conn = db_pool.lock().unwrap();
+fn start_kickstart_installation(db_pool: Pool<SqliteConnectionManager>) {
+    let conn = db_pool.get().unwrap();
     // 查询安装进度为NotConfigured且os不为空的主机
     let mut stmt = conn
         .prepare("SELECT ip_address, os, install_progress FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL")
@@ -81,8 +82,8 @@ fn start_kickstart_installation(db_pool: Arc<Mutex<Connection>>) {
 }
 
 // 将所有安装进度为 RebootingToKickstart 的主机重启到 kickstart
-fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
-    let conn = db_pool.lock().unwrap();
+fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
+    let conn = db_pool.get().unwrap();
     // 查询安装进度为NotConfigured且os不为空的主机
     let mut stmt = conn
         .prepare("SELECT ip_address, os, install_progress FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL")
@@ -112,7 +113,7 @@ fn reboot_host_to_kickstart(db_pool: Arc<Mutex<Connection>>) {
 }
 
 // 持续监控主机状态，并在达到进度时下发操作
-pub async fn progress_control(interval_secs: u64, db_pool: Arc<Mutex<Connection>>) {
+pub async fn progress_control(interval_secs: u64, db_pool: Pool<SqliteConnectionManager>) {
     loop {
         // 记录开始时间
         let start_time = Utc::now();

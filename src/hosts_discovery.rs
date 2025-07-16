@@ -17,11 +17,12 @@
 // 主机发现相关代码：这段代码用于监控 dhcp.leases 并对所有有 dhcp 租约的主机进行信息更新
 use chrono::{Local, NaiveDateTime, Utc};
 use futures::stream::{self, StreamExt};
-use rusqlite::{Connection, params};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::params;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::sync::{Arc, Mutex};
 use tokio::time::Duration;
 
 use crate::command_execute::run_ssh_command_on_host;
@@ -91,8 +92,8 @@ fn parse_dhcp_leases(file_path: &str) -> HashSet<String> {
     active_ips
 }
 
-fn add_host_to_db(host: Host, db_pool: &Arc<Mutex<Connection>>) {
-    let conn = db_pool.lock().unwrap();
+fn add_host_to_db(host: Host, db_pool: &Pool<SqliteConnectionManager>) {
+    let conn = db_pool.get().unwrap();
     // 检查序列号是否存在
     let exists: bool = conn
         .query_row(
@@ -121,7 +122,7 @@ fn add_host_to_db(host: Host, db_pool: &Arc<Mutex<Connection>>) {
 pub async fn monitor_dhcp_leases(
     file_path: &str,
     interval_secs: u64,
-    db_pool: Arc<Mutex<Connection>>,
+    db_pool: Pool<SqliteConnectionManager>,
 ) {
     loop {
         // 记录开始时间
