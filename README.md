@@ -110,6 +110,9 @@ EOF
 make bin-x86_64-efi/ipxe.efi EMBED=boot.ipxe
 cp bin-x86_64-efi/ipxe.efi /var/lib/tftpboot/ipxex64.efi
 chmod 644 /var/lib/tftpboot/ipxex64.efi
+make bin/undionly.kpxe EMBED=boot.ipxe
+cp bin/undionly.kpxe /var/lib/tftpboot/undionly.kpxe
+chmod 644 /var/lib/tftpboot/undionly.kpxe
 ```
 
 ### 部署 DNS 服务

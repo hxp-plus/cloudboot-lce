@@ -34,7 +34,8 @@ pub enum Progress {
     KickstartLoaded = 10,
     PreInstallFinished = 20,
     PostInstallFinished = 60,
-    InstallFinished = 100,
+    InstallFinished = 80,
+    RebootedToSystem = 85,
 }
 
 // 将所有尚未开始安装但是配置了操作系统的机器，安装进度置为正在重启到kickstart
@@ -120,7 +121,7 @@ async fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
                 .await
                 .unwrap_or("".to_string());
         if progress_on_host.trim() == (Progress::RebootingToKickstart as i32).to_string() {
-            run_ssh_command_on_host(&host.ip_address, "/sbin/reboot").await;
+            run_ssh_command_on_host(&host.ip_address, "ipmitool chassis bootdev pxe;/sbin/reboot").await;
             println!("[INFO] Rebooting host: {}", host.ip_address);
         }
     }
