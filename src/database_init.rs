@@ -25,6 +25,9 @@ pub fn init_db(conn: &Connection) {
             ip_address TEXT,
             ipmi_address TEXT,
             os TEXT,
+            hostname TEXT,
+            public_ip_addr TEXT,
+            vlan_id INTEGER,
             install_progress INTEGER,
             last_updated TEXT
         )",

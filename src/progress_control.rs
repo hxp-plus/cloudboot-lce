@@ -19,6 +19,7 @@ use chrono::Utc;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
+use tokio::process::Command;
 use tokio::time::Duration;
 
 use crate::command_execute::run_ssh_command_on_host;
@@ -26,6 +27,9 @@ use crate::command_execute::run_ssh_command_on_host;
 struct Host {
     ip_address: String,
     os: String,
+    hostname: String,
+    public_ip_addr: String,
+    vlan_id: u32,
 }
 
 pub enum Progress {
@@ -45,7 +49,7 @@ async fn start_kickstart_installation(db_pool: Pool<SqliteConnectionManager>) {
         // 查询安装进度为NotConfigured且os不为空的主机
         let mut stmt = conn
             .prepare(
-                "SELECT ip_address, os FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
+                "SELECT ip_address, os, hostname, public_ip_addr, vlan_id FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
             )
             .unwrap();
         let host_iter = stmt
@@ -53,6 +57,9 @@ async fn start_kickstart_installation(db_pool: Pool<SqliteConnectionManager>) {
                 Ok(Host {
                     ip_address: row.get(0)?,
                     os: row.get(1)?,
+                    hostname: row.get(2)?,
+                    public_ip_addr: row.get(3)?,
+                    vlan_id: row.get(4)?,
                 })
             })
             .unwrap();
@@ -99,13 +106,16 @@ async fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
         let conn = db_pool.get().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT ip_address, os FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
+                "SELECT ip_address, os, hostname, public_ip_addr, vlan_id FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
             )
             .unwrap();
         stmt.query_map(params![Progress::RebootingToKickstart as i32], |row| {
             Ok(Host {
                 ip_address: row.get(0)?,
                 os: row.get(1)?,
+                hostname: row.get(2)?,
+                public_ip_addr: row.get(3)?,
+                vlan_id: row.get(4)?,
             })
         })
         .unwrap()
@@ -121,8 +131,127 @@ async fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
                 .await
                 .unwrap_or("".to_string());
         if progress_on_host.trim() == (Progress::RebootingToKickstart as i32).to_string() {
-            run_ssh_command_on_host(&host.ip_address, "ipmitool chassis bootdev pxe;/sbin/reboot").await;
+            run_ssh_command_on_host(
+                &host.ip_address,
+                "ipmitool chassis bootdev pxe;/sbin/reboot",
+            )
+            .await;
             println!("[INFO] Rebooting host: {}", host.ip_address);
+        }
+    }
+}
+
+// 将已经装好重启完毕的机器配置主机名和网络
+async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager>) {
+    // 将数据库操作移动到阻塞线程
+    let hosts: Vec<Host> = tokio::task::spawn_blocking(move || {
+        let conn = db_pool.get().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT ip_address, os, hostname, public_ip_addr, vlan_id FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
+            )
+            .unwrap();
+        stmt.query_map(params![Progress::RebootedToSystem as i32], |row| {
+            Ok(Host {
+                ip_address: row.get(0)?,
+                os: row.get(1)?,
+                hostname: row.get(2)?,
+                public_ip_addr: row.get(3)?,
+                vlan_id: row.get(4)?,
+            })
+        })
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect()
+    })
+    .await
+    .unwrap();
+    // 对所有的机器进行网络配置
+    for host in hosts {
+        // 获取主机所有网卡
+        let nics = run_ssh_command_on_host(
+            &host.ip_address,
+            r#"
+            for dev in /sys/class/net/*/uevent; do
+                nic=$(cat ${dev} | grep INTERFACE | awk -F'=' '{print $2}')
+                port=$(ethtool ${nic} | awk '/Port/ {print$NF}')
+                link=$(ethtool ${nic} | awk '/Link/ {print$NF}')
+                [[ "$port" == "FIBRE" ]] && [[ "$nic" != "lo" ]] && echo "$nic"
+            done
+            "#,
+        )
+        .await;
+        if let Some(nics) = nics {
+            // 判断网卡数量是否为2
+            if nics.lines().count() != 2 {
+                println!(
+                    "[WARN] Host {} has {} NICs, expected 2 NICs for configuration.",
+                    host.ip_address,
+                    nics.lines().count()
+                );
+                continue;
+            } else {
+                let hostname = host.hostname;
+                let nic_1 = nics.lines().nth(0).unwrap().trim();
+                let nic_2 = nics.lines().nth(1).unwrap().trim();
+                let public_ip_addr = host.public_ip_addr;
+                let gateway = public_ip_addr
+                    .split('.')
+                    .take(3)
+                    .collect::<Vec<&str>>()
+                    .join(".")
+                    + ".1";
+                let vlan_id = host.vlan_id;
+                run_ssh_command_on_host(&host.ip_address, &format!("
+                    mkdir -p /tmp/.install
+                    cat >/tmp/.install/network-config.sh <<EOF
+                        #!/bin/bash
+                        hostnamectl set-hostname --static {hostname}
+                        rm -f /etc/sysconfig/network-scripts/ifcfg-*
+                        nmcli -t -f uuid connection show | xargs nmcli connection delete
+                        nmcli connection add type bond ifname bond0 con-name bond0 mode 4 ipv4.method disabled ipv6.method ignore ipv6.addr-gen-mode eui64
+                        nmcli connection add type bond-slave ifname {nic_1} con-name {nic_1} master bond0
+                        nmcli connection add type bond-slave ifname {nic_2} con-name {nic_2} master bond0
+                        nmcli connection up bond0
+                        nmcli con add type vlan ifname bond0.{vlan_id} con-name bond0.{vlan_id} id {vlan_id} dev bond0
+                        nmcli connection modify bond0.{vlan_id} ipv4.method manual ipv4.addresses {public_ip_addr}/24
+                        nmcli connection modify bond0.{vlan_id} ipv4.gateway {gateway}
+                        nmcli connection up bond0.{vlan_id}
+                        nmcli connection reload
+                        ping -c10 {public_ip_addr}
+                        nmcli connection show
+                        cat /proc/net/bonding/bond0 | grep -i agger
+                    EOF
+                    chmod +x /tmp/.install/network-config.sh
+                    "
+                )).await;
+                println!(
+                    "[INFO] Host {} configured with network and hostname.",
+                    host.ip_address
+                );
+                // ping主机公网IP，如果通，将安装进度设置为安装完成
+                let mut command = Command::new("ping");
+                command.arg("-c").arg("1").arg("-W").arg("1");
+                let result = command.output().await;
+                match result {
+                    Ok(output) => {
+                        if output.status.success() {
+                            println!("[INFO] Ping to {} successful!", &public_ip_addr);
+                        } else {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            println!(
+                                "[INFO] Ping to {} failed with non-zero exit code. Stderr: {}",
+                                &public_ip_addr, stderr
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        println!("[ERROR] Failed to execute ping command: {}", e);
+                    }
+                }
+            }
+        } else {
+            println!("[WARN] No NICs found for host: {}", host.ip_address);
         }
     }
 }
@@ -136,6 +265,8 @@ pub async fn progress_control(interval_secs: u64, db_pool: Pool<SqliteConnection
         start_kickstart_installation(db_pool.clone()).await;
         // 重启所有状态为RebootingToKickstart的机器
         reboot_host_to_kickstart(db_pool.clone()).await;
+        // 配置所有已经装机完成的机器
+        configure_host_after_installation(db_pool.clone()).await;
         // 如果当前时间与上次检查时间间隔小于指定的间隔，则等待剩余时间
         let elapsed_time = Utc::now().signed_duration_since(start_time).num_seconds();
         if elapsed_time < interval_secs as i64 {
