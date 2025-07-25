@@ -145,8 +145,15 @@ pub async fn monitor_dhcp_leases(
                     let serial = run_ssh_command_on_host(
                         &ip,
                         "cat /sys/devices/virtual/dmi/id/product_serial",
-                    ).await
-                    .unwrap_or("unknown".to_string());
+                    ).await;
+                    // 当序列号收集到时，才进行后续操作，以防止浪潮读不出序列号问题
+                    let serial = match serial {
+                        Some(s) => s.trim().to_string(),
+                        None => {
+                            println!("[INFO] No serial found for IP: {}", ip);
+                            return;
+                        }
+                    };
                     // 收集带外管理IP地址信息
                     let ipmi_addr = run_ssh_command_on_host(
                         &ip,
