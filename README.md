@@ -171,8 +171,10 @@ chmod 644 /usr/share/nginx/html/http-boot.ipxe
 
 ```bash
 umask 0022
-mkdir -p /usr/share/nginx/html/repo/kylin/v10sp4/
-rsync -a /mnt/ /usr/share/nginx/html/repo/kylin/v10sp4/
+mkdir -p /usr/share/nginx/html/repo/kylin/v10sp4/x86_64/
+rsync -a /mnt/ /usr/share/nginx/html/repo/kylin/v10sp4/x86_64/
+mkdir -p /usr/share/nginx/html/bootos/x86_64/
+rsync -a /mnt/ /usr/share/nginx/html/bootos/x86_64/
 ```
 
 创建 `x86_64` 架构默认 `iPXE` 文件 `/usr/share/nginx/html/default-x86_64.ipxe`：
@@ -180,12 +182,12 @@ rsync -a /mnt/ /usr/share/nginx/html/repo/kylin/v10sp4/
 ```ipxe
 #!ipxe
 echo Booting ${serial}
-kernel http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/vmlinuz initrd=initrd.img ksdevice=bootif BOOTIF=01-${netX/mac:hexhyp} inst.sshd inst.repo=http://osinstall.pxe/repo/kylin/v10sp4 inst.text inst.ks=http://osinstall.pxe/default-kickstart.cfg
-initrd http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/initrd.img
+kernel http://osinstall.pxe/bootos/x86_64/images/pxeboot/vmlinuz initrd=initrd.img ksdevice=bootif BOOTIF=01-${netX/mac:hexhyp} inst.sshd inst.repo=http://osinstall.pxe/bootos/x86_64 inst.text inst.ks=http://osinstall.pxe/bootos/kickstart.cfg
+initrd http://osinstall.pxe/bootos/x86_64/images/pxeboot/initrd.img
 boot
 ```
 
-创建默认 `/usr/share/nginx/html/default-kickstart.cfg` 文件：
+创建默认 `/usr/share/nginx/html/bootos/kickstart.cfg` 文件：
 
 ```kickstart
 text
@@ -247,15 +249,43 @@ yum install sqlite-devel sshpass
 ```ipxe
 #!ipxe
 echo "Booting ${serial}"
-kernel http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/vmlinuz initrd=initrd.img ksdevice=bootif BOOTIF=01-${netX/mac:hexhyp} inst.sshd inst.repo=http://osinstall.pxe/repo/kylin/v10sp4/ inst.text inst.ks=http://osinstall.pxe/repo/kylin/v10sp4/ks-pxe.cfg
-initrd http://osinstall.pxe/repo/kylin/v10sp4/images/pxeboot/initrd.img
+kernel http://osinstall.pxe/repo/kylin/v10sp4/x86_64/images/pxeboot/vmlinuz initrd=initrd.img ksdevice=bootif BOOTIF=01-${netX/mac:hexhyp} inst.sshd inst.repo=http://osinstall.pxe/repo/kylin/v10sp4/x86_64/ inst.text inst.ks=http://osinstall.pxe/repo/kylin/v10sp4/x86_64/ks-pxe.lce.cfg
+initrd http://osinstall.pxe/repo/kylin/v10sp4/x86_64/images/pxeboot/initrd.img
 boot
 ```
 
 然后将其注册到数据库：
 
 ```bash
-sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db "insert into ipxe (os,script) values ('Kylin-V10SP4-X86','/root/cloudboot-lce/assets/Kylin-V10SP4-X86.ipxe');"
+sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db "insert into ipxe (os,script) values ('Kylin-V10SP4-X86','/opt/cloudboot-lce/assets/Kylin-V10SP4-X86.ipxe');"
+```
+
+## 新建 systemd 服务
+
+新建文件 `/etc/systemd/system/cloudboot.service` :
+
+```ini
+[Unit]
+Description=CloudBoot Lite Clientless Edition
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sysconfig/sshd
+ExecStart=/opt/cloudboot-lce/target/release/cloudboot-lce
+WorkingDirectory=/opt/cloudboot-lce
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+使其生效：
+
+```bash
+systemctl daemon-reload
+systemctl enable --now cloudboot
 ```
 
 ## 使用指南

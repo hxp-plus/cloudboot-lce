@@ -141,7 +141,7 @@ async fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
         if progress_on_host.trim() == (Progress::RebootingToKickstart as i32).to_string() {
             run_ssh_command_on_host(
                 &host.ip_address,
-                "ipmitool chassis bootdev pxe;/sbin/reboot",
+                "ipmitool chassis bootdev pxe options=efiboot;/sbin/reboot",
             )
             .await;
             println!("[INFO] Rebooting host: {}", host.ip_address);
