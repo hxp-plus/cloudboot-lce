@@ -265,7 +265,7 @@ sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db "insert into ipx
 找到所有已纳管主机：
 
 ```shell
-sqlite3 -cmd '.headers on' -cmd '.mode column' cloudboot-lce.db 'SELECT * FROM hosts;'
+sqlite3 -cmd '.headers on' -cmd '.mode column' -cmd '.width 4 12 16 16 16 16 16 8 16 20' cloudboot-lce.db 'SELECT * FROM hosts;'
 ```
 
 找到所有操作系统和对应的 iPXE 文件：
