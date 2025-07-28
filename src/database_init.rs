@@ -20,10 +20,9 @@ use rusqlite::Connection;
 pub fn init_db(conn: &Connection) {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS hosts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
             serial TEXT UNIQUE,
             ip_address TEXT,
-            ipmi_address TEXT,
+            ipmi_address TEXT PRIMARY KEY,
             os TEXT,
             hostname TEXT,
             public_ip_addr TEXT,
@@ -38,6 +37,13 @@ pub fn init_db(conn: &Connection) {
         "CREATE TABLE IF NOT EXISTS ipxe (
             os TEXT PRIMARY KEY,
             script TEXT
+        )",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS install_queue (
+            ipmi_address TEXT PRIMARY KEY
         )",
         [],
     )

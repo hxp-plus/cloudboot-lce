@@ -26,9 +26,9 @@ use crate::command_execute::run_ssh_command_on_host;
 
 struct Host {
     ip_address: String,
-    os: String,
     hostname: String,
     public_ip_addr: String,
+    ipmi_address: String,
     vlan_id: u32,
 }
 
@@ -44,46 +44,46 @@ pub enum Progress {
 
 // 将所有尚未开始安装但是配置了操作系统的机器，安装进度置为正在重启到kickstart
 async fn start_kickstart_installation(db_pool: Pool<SqliteConnectionManager>) {
+    let db_pool_clone = db_pool.clone();
     let hosts_to_process = tokio::task::spawn_blocking(move || {
         let conn = db_pool.get().unwrap();
-        // 查询安装进度为NotConfigured且os不为空的主机
+        // 查询 install_queue 表，并与 hosts 表进行 LEFT JOIN
+        // 同时在 SQL 查询中检查 ipxe 表是否存在相应的脚本
         let mut stmt = conn
             .prepare(
-                "SELECT ip_address, os, hostname, public_ip_addr, vlan_id FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
+                r#"
+                SELECT
+                    h.ip_address,
+                    h.hostname,
+                    h.public_ip_addr,
+                    h.vlan_id,
+                    iq.ipmi_address
+                FROM install_queue iq
+                LEFT JOIN hosts h ON iq.ipmi_address = h.ipmi_address
+                WHERE h.install_progress = ?1
+                  AND h.os IS NOT NULL
+                  AND EXISTS (SELECT 1 FROM ipxe WHERE os = h.os AND script IS NOT NULL)
+                "#,
             )
             .unwrap();
         let host_iter = stmt
             .query_map(params![Progress::NotConfigured as i32], |row| {
                 Ok(Host {
                     ip_address: row.get(0)?,
-                    os: row.get(1)?,
-                    hostname: row.get(2)?,
-                    public_ip_addr: row.get(3)?,
-                    vlan_id: row.get(4)?,
+                    hostname: row.get(1)?,
+                    public_ip_addr: row.get(2)?,
+                    vlan_id: row.get(3)?,
+                    ipmi_address: row.get(4)?, // 获取 ipmi_address
                 })
             })
             .unwrap();
-        let mut hosts: Vec<Host> = host_iter.filter_map(Result::ok).collect();
-        // 检查每个主机的os是否在ipxe表且ipxe表里script不为空
-        let mut hosts_with_ipxe: Vec<Host> = Vec::new();
-        for host in hosts.drain(..) {
-            let mut ipxe_stmt = conn
-                .prepare("SELECT script FROM ipxe WHERE os = ?1 AND script IS NOT NULL")
-                .unwrap();
-            let script_exists = ipxe_stmt
-                .query_map(params![host.os], |row| row.get::<_, String>(0))
-                .unwrap()
-                .count()
-                > 0;
-            if script_exists {
-                hosts_with_ipxe.push(host);
-            }
-        }
-        hosts_with_ipxe
+        let hosts: Vec<Host> = host_iter.filter_map(Result::ok).collect();
+        hosts
     })
     .await
     .expect("Failed to get hosts from database");
     for host in hosts_to_process {
+        // 更新主机状态到 RebootingToKickstart
         run_ssh_command_on_host(
             &host.ip_address,
             &format!(
@@ -93,9 +93,17 @@ async fn start_kickstart_installation(db_pool: Pool<SqliteConnectionManager>) {
         )
         .await;
         println!(
-            "[INFO] Setting host {} install progress to: RebootingToKickstart",
-            host.ip_address
+            "[INFO] Setting host {} (IPMI: {}) install progress to: RebootingToKickstart",
+            host.ip_address, host.ipmi_address
         );
+        // SSH 命令成功后，删除 install_queue 中的 ipmi_address
+        let ipmi_address = host.ipmi_address.clone();
+        let conn = db_pool_clone.get().unwrap();
+        conn.execute(
+            "DELETE FROM install_queue WHERE ipmi_address = ?1",
+            params![ipmi_address],
+        )
+        .unwrap();
     }
 }
 
@@ -106,16 +114,16 @@ async fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
         let conn = db_pool.get().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT ip_address, os, hostname, public_ip_addr, vlan_id FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
+                "SELECT ip_address, hostname, public_ip_addr, vlan_id, ipmi_address FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
             )
             .unwrap();
         stmt.query_map(params![Progress::RebootingToKickstart as i32], |row| {
             Ok(Host {
                 ip_address: row.get(0)?,
-                os: row.get(1)?,
-                hostname: row.get(2)?,
-                public_ip_addr: row.get(3)?,
-                vlan_id: row.get(4)?,
+                hostname: row.get(1)?,
+                public_ip_addr: row.get(2)?,
+                vlan_id: row.get(3)?,
+                ipmi_address: row.get(4)?,
             })
         })
         .unwrap()
@@ -149,16 +157,16 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
         let conn = db_pool.get().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT ip_address, os, hostname, public_ip_addr, vlan_id FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
+                "SELECT ip_address, hostname, public_ip_addr, vlan_id, ipmi_address FROM hosts WHERE install_progress = ?1 AND os IS NOT NULL",
             )
             .unwrap();
         stmt.query_map(params![Progress::RebootedToSystem as i32], |row| {
             Ok(Host {
                 ip_address: row.get(0)?,
-                os: row.get(1)?,
-                hostname: row.get(2)?,
-                public_ip_addr: row.get(3)?,
-                vlan_id: row.get(4)?,
+                hostname: row.get(1)?,
+                public_ip_addr: row.get(2)?,
+                vlan_id: row.get(3)?,
+                ipmi_address: row.get(4)?,
             })
         })
         .unwrap()
@@ -228,7 +236,11 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
                     "
                 )).await;
                 run_ssh_command_on_host(&host.ip_address, "sed -i 's/^[[:space:]]*//' /tmp/.install/network-config.sh;chmod +x /tmp/.install/network-config.sh").await;
-                run_ssh_command_on_host(&host.ip_address, "nohup /tmp/.install/network-config.sh &>/tmp/.install/network-config.log &").await;
+                run_ssh_command_on_host(
+                    &host.ip_address,
+                    "nohup /tmp/.install/network-config.sh &>/tmp/.install/network-config.log &",
+                )
+                .await;
                 println!(
                     "[INFO] Host {} configured with network and hostname.",
                     host.ip_address
@@ -237,14 +249,23 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
         } else {
             // ping主机公网IP，如果通，将安装进度设置为安装完成
             let mut command = Command::new("ping");
-            command.arg("-c").arg("1").arg("-W").arg("1").arg(&host.public_ip_addr);
+            command
+                .arg("-c")
+                .arg("1")
+                .arg("-W")
+                .arg("1")
+                .arg(&host.public_ip_addr);
             let result = command.output().await;
             match result {
                 Ok(output) => {
                     if output.status.success() {
                         println!("[INFO] Ping to {} successful!", &host.public_ip_addr);
                         let conn = db_pool_clone.get().unwrap();
-                        conn.execute("UPDATE hosts SET install_progress = ?1 WHERE public_ip_addr = ?2",params![100,&host.public_ip_addr]).unwrap();
+                        conn.execute(
+                            "UPDATE hosts SET install_progress = ?1 WHERE public_ip_addr = ?2",
+                            params![100, &host.public_ip_addr],
+                        )
+                        .unwrap();
                     } else {
                         let stdout = String::from_utf8_lossy(&output.stdout);
                         let stderr = String::from_utf8_lossy(&output.stderr);
