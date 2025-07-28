@@ -192,29 +192,29 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
         )
         .await;
         if let Some(nics) = nics {
-            // 判断网卡数量是否为2
-            if nics.lines().count() != 4 && nics.lines().count() != 2 {
-                println!(
-                    "[WARN] Host {} has {} NICs, expected 4 or 2 NICs for configuration.",
-                    host.ip_address,
-                    nics.lines().count()
-                );
-            } else {
-                let hostname = host.hostname;
-                let nic_1 = nics.lines().nth(0).unwrap().trim();
-                let mut nic_2 = nics.lines().nth(1).unwrap().trim();
-                if nics.lines().count() == 4 {
-                    nic_2 = nics.lines().nth(2).unwrap().trim();
+            let hostname = host.hostname;
+            let nic_1 = nics.lines().nth(0).unwrap().trim();
+            let nic_2 = match nics.lines().count() {
+                4 => nics.lines().nth(2).map(|s| s.trim()).unwrap(),
+                2 => nics.lines().nth(1).map(|s| s.trim()).unwrap(),
+                _ => {
+                    println!(
+                        "[ERROR] Unexpected number of NICs for host {}: {}",
+                        host.ip_address,
+                        nics.lines().count()
+                    );
+                    continue;
                 }
-                let public_ip_addr = host.public_ip_addr;
-                let gateway = public_ip_addr
-                    .split('.')
-                    .take(3)
-                    .collect::<Vec<&str>>()
-                    .join(".")
-                    + ".1";
-                let vlan_id = host.vlan_id;
-                run_ssh_command_on_host(&host.ip_address, &format!("
+            };
+            let public_ip_addr = host.public_ip_addr;
+            let gateway = public_ip_addr
+                .split('.')
+                .take(3)
+                .collect::<Vec<&str>>()
+                .join(".")
+                + ".1";
+            let vlan_id = host.vlan_id;
+            run_ssh_command_on_host(&host.ip_address, &format!("
                     mkdir -p /tmp/.install
                     cat >/tmp/.install/network-config.sh <<-'EOF'
                         #!/bin/bash
@@ -235,17 +235,16 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
                         cat /proc/net/bonding/bond0 | grep Aggregator
                     "
                 )).await;
-                run_ssh_command_on_host(&host.ip_address, "sed -i 's/^[[:space:]]*//' /tmp/.install/network-config.sh;chmod +x /tmp/.install/network-config.sh").await;
-                run_ssh_command_on_host(
-                    &host.ip_address,
-                    "nohup /tmp/.install/network-config.sh &>/tmp/.install/network-config.log &",
-                )
-                .await;
-                println!(
-                    "[INFO] Host {} configured with network and hostname.",
-                    host.ip_address
-                );
-            }
+            run_ssh_command_on_host(&host.ip_address, "sed -i 's/^[[:space:]]*//' /tmp/.install/network-config.sh;chmod +x /tmp/.install/network-config.sh").await;
+            run_ssh_command_on_host(
+                &host.ip_address,
+                "nohup /tmp/.install/network-config.sh &>/tmp/.install/network-config.log &",
+            )
+            .await;
+            println!(
+                "[INFO] Host {} configured with network and hostname.",
+                host.ip_address
+            );
         } else {
             // ping主机公网IP，如果通，将安装进度设置为安装完成
             let mut command = Command::new("ping");
