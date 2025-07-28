@@ -143,6 +143,7 @@ async fn reboot_host_to_kickstart(db_pool: Pool<SqliteConnectionManager>) {
 
 // 将已经装好重启完毕的机器配置主机名和网络
 async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager>) {
+    let db_pool_clone = db_pool.clone();
     // 将数据库操作移动到阻塞线程
     let hosts: Vec<Host> = tokio::task::spawn_blocking(move || {
         let conn = db_pool.get().unwrap();
@@ -178,22 +179,25 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
                 link=$(ethtool ${nic} | awk '/Link/ {print$NF}')
                 [[ "$port" == "FIBRE" ]] && [[ "$nic" != "lo" ]] && echo "$nic"
             done
+            echo
             "#,
         )
         .await;
         if let Some(nics) = nics {
             // 判断网卡数量是否为2
-            if nics.lines().count() != 2 {
+            if nics.lines().count() != 4 && nics.lines().count() != 2 {
                 println!(
-                    "[WARN] Host {} has {} NICs, expected 2 NICs for configuration.",
+                    "[WARN] Host {} has {} NICs, expected 4 or 2 NICs for configuration.",
                     host.ip_address,
                     nics.lines().count()
                 );
-                continue;
             } else {
                 let hostname = host.hostname;
                 let nic_1 = nics.lines().nth(0).unwrap().trim();
-                let nic_2 = nics.lines().nth(1).unwrap().trim();
+                let mut nic_2 = nics.lines().nth(1).unwrap().trim();
+                if nics.lines().count() == 4 {
+                    nic_2 = nics.lines().nth(2).unwrap().trim();
+                }
                 let public_ip_addr = host.public_ip_addr;
                 let gateway = public_ip_addr
                     .split('.')
@@ -204,7 +208,7 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
                 let vlan_id = host.vlan_id;
                 run_ssh_command_on_host(&host.ip_address, &format!("
                     mkdir -p /tmp/.install
-                    cat >/tmp/.install/network-config.sh <<EOF
+                    cat >/tmp/.install/network-config.sh <<-'EOF'
                         #!/bin/bash
                         hostnamectl set-hostname --static {hostname}
                         rm -f /etc/sysconfig/network-scripts/ifcfg-*
@@ -220,37 +224,40 @@ async fn configure_host_after_installation(db_pool: Pool<SqliteConnectionManager
                         nmcli connection reload
                         ping -c10 {public_ip_addr}
                         nmcli connection show
-                        cat /proc/net/bonding/bond0 | grep -i agger
-                    EOF
-                    chmod +x /tmp/.install/network-config.sh
+                        cat /proc/net/bonding/bond0 | grep Aggregator
                     "
                 )).await;
+                run_ssh_command_on_host(&host.ip_address, "sed -i 's/^[[:space:]]*//' /tmp/.install/network-config.sh;chmod +x /tmp/.install/network-config.sh").await;
+                run_ssh_command_on_host(&host.ip_address, "nohup /tmp/.install/network-config.sh &>/tmp/.install/network-config.log &").await;
                 println!(
                     "[INFO] Host {} configured with network and hostname.",
                     host.ip_address
                 );
-                // ping主机公网IP，如果通，将安装进度设置为安装完成
-                let mut command = Command::new("ping");
-                command.arg("-c").arg("1").arg("-W").arg("1");
-                let result = command.output().await;
-                match result {
-                    Ok(output) => {
-                        if output.status.success() {
-                            println!("[INFO] Ping to {} successful!", &public_ip_addr);
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            println!(
-                                "[INFO] Ping to {} failed with non-zero exit code. Stderr: {}",
-                                &public_ip_addr, stderr
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        println!("[ERROR] Failed to execute ping command: {}", e);
-                    }
-                }
             }
         } else {
+            // ping主机公网IP，如果通，将安装进度设置为安装完成
+            let mut command = Command::new("ping");
+            command.arg("-c").arg("1").arg("-W").arg("1").arg(&host.public_ip_addr);
+            let result = command.output().await;
+            match result {
+                Ok(output) => {
+                    if output.status.success() {
+                        println!("[INFO] Ping to {} successful!", &host.public_ip_addr);
+                        let conn = db_pool_clone.get().unwrap();
+                        conn.execute("UPDATE hosts SET install_progress = ?1 WHERE public_ip_addr = ?2",params![100,&host.public_ip_addr]).unwrap();
+                    } else {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        println!(
+                            "[INFO] Ping to {} failed with non-zero exit code. stdout: {}, stderr: {}",
+                            &host.public_ip_addr, stdout, stderr
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("[ERROR] Failed to execute ping command: {}", e);
+                }
+            }
             println!("[WARN] No NICs found for host: {}", host.ip_address);
         }
     }
