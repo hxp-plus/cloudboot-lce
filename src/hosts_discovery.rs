@@ -154,6 +154,10 @@ pub async fn monitor_dhcp_leases(
                             return;
                         }
                     };
+                    if serial.is_empty() {
+                        println!("[INFO] Empty serial found for IP: {}", ip);
+                        return;
+                    };
                     // 收集带外管理IP地址信息
                     let ipmi_addr = run_ssh_command_on_host(
                         &ip,
